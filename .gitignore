@@ -11,3 +11,6 @@ docs/_build
 
 # showcase output
 examples/showcase_out/
+
+.env
+.venv/
