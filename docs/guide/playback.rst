@@ -125,6 +125,30 @@ prefer the function form:
    >>> len(buf)
    604800
 
+PyTheory now supports opt-in engine selection for score rendering. The
+default engine remains ``"numpy"``, but you can switch globally or per
+call when working with VST3 plugins through the optional pedalboard
+integration:
+
+.. code-block:: python
+
+   from pytheory import (
+       PluginSpec, register_instrument, set_engine,
+       render_score, play_score,
+   )
+
+   register_instrument("piano_vst", "C:/Plugins/Piano.vst3")
+   set_engine("pedalboard")
+
+   score.part("keys", synth="piano_vst")
+   buf = render_score(score)                 # uses the global pedalboard engine
+   buf = score.render(engine="numpy")        # one-off override back to NumPy
+   play_score(score, engine="pedalboard")    # explicit per-call override
+
+Third-party plugin binaries are not bundled with PyTheory. If pedalboard
+or a requested VST3 plugin is unavailable, NumPy rendering remains the
+supported default path.
+
 save() -- WAV Export
 --------------------
 

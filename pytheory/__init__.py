@@ -17,6 +17,16 @@ from .serialism import ToneRow
 
 from .rhythm import Duration, TimeSignature, Rest, Score, Part, Section, DrumSound, Pattern, Hit, INSTRUMENTS
 from .rhythm import Note as RhythmNote  # rhythm.Note (tone + duration pairing)
+from .engines import (
+    EffectSpec,
+    PluginSpec,
+    clear_plugin_registry,
+    get_engine,
+    register_drumkit,
+    register_instrument,
+    set_engine,
+    unregister_instrument,
+)
 
 from .play import (play, save, save_midi, play_progression, play_pattern,
                    play_score, render_score, render_scores, Synth, Envelope)
@@ -36,4 +46,7 @@ __all__ = [
     "play_score", "render_score", "render_scores", "Synth", "Envelope",
     "Duration", "TimeSignature", "RhythmNote", "Rest", "Score", "Part",
     "DrumSound", "Pattern", "Hit", "Section", "INSTRUMENTS",
+    "PluginSpec", "EffectSpec", "set_engine", "get_engine",
+    "register_instrument", "register_drumkit", "unregister_instrument",
+    "clear_plugin_registry",
 ]

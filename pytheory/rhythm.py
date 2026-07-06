@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Optional
 
+from .engines import EffectSpec, PluginSpec, normalize_plugin_spec
+
 
 # ── Instrument presets ────────────────────────────────────────────────────────
 # Predefined combinations of synth, envelope, effects, and parameters that
@@ -3005,7 +3007,9 @@ class Part:
                  ensemble: int = 1,
                  fm_ratio: float = 2.0,
                  fm_index: float = 3.0,
-                 synth_kw: dict = None):
+                 synth_kw: dict = None,
+                 vst_instrument: PluginSpec | str | None = None,
+                 vst_effects: tuple[EffectSpec | str, ...] = ()):
         self.name = name
         self.synth = synth
         self.envelope = envelope
@@ -3054,6 +3058,15 @@ class Part:
         self.fm_ratio = fm_ratio
         self.fm_index = fm_index
         self.synth_kw = synth_kw or {}
+        self.vst_instrument = (
+            normalize_plugin_spec(vst_instrument)
+            if vst_instrument is not None else None
+        )
+        self.vst_effects = tuple(
+            effect if isinstance(effect, EffectSpec)
+            else normalize_plugin_spec(effect, mix=1.0)
+            for effect in vst_effects
+        )
         self._system = "western"  # default, overridden by Score.part()
         self._fretboard = None    # set by Score.part(fretboard=...)
         self.notes: list[Note] = []
@@ -4216,6 +4229,9 @@ class Score:
              ensemble: int = None,
              fm_ratio: float = None,
              fm_index: float = None,
+             vst_instrument: PluginSpec | str | None = None,
+             vst_preset: str | None = None,
+             vst_effects: tuple[EffectSpec | str, ...] | None = None,
              fretboard=None) -> Part:
         """Create a named part with its own synth voice and effects.
 
@@ -4335,8 +4351,28 @@ class Score:
                 explicit[k] = v
 
         merged = {**_defaults, **explicit}
+        if vst_instrument is not None and not isinstance(vst_instrument, PluginSpec):
+            vst_instrument = normalize_plugin_spec(vst_instrument, preset=vst_preset)
+        elif isinstance(vst_instrument, PluginSpec) and vst_preset is not None:
+            vst_instrument = normalize_plugin_spec(
+                vst_instrument.path,
+                preset=vst_preset,
+                plugin_name=vst_instrument.plugin_name,
+                parameters=vst_instrument.parameters,
+                initialization_timeout=vst_instrument.initialization_timeout,
+            )
+        normalized_effects = tuple(
+            effect if isinstance(effect, EffectSpec)
+            else normalize_plugin_spec(effect, mix=1.0)
+            for effect in (vst_effects or ())
+        )
 
-        p = Part(name, **merged)
+        p = Part(
+            name,
+            **merged,
+            vst_instrument=vst_instrument,
+            vst_effects=normalized_effects,
+        )
         p._system = self.system
         p._fretboard = fretboard
         self.parts[name] = p
@@ -5593,7 +5629,7 @@ class Score:
 
         raise ValueError("No pitched parts with notes found in score")
 
-    def render(self):
+    def render(self, *, engine=None):
         """Render this score to audio.
 
         Mixes every part and drum track, runs the master bus, and returns
@@ -5610,9 +5646,9 @@ class Score:
             score.to_wav("song.wav")      # or save straight to disk
         """
         from .play import render_score
-        return render_score(self)
+        return render_score(self, engine=engine)
 
-    def to_wav(self, path):
+    def to_wav(self, path, *, engine=None):
         """Render this score and save it as a 16-bit stereo WAV file.
 
         Args:
@@ -5629,7 +5665,7 @@ class Score:
         import numpy as _np
         from .play import SAMPLE_RATE
 
-        buf = self.render()
+        buf = self.render(engine=engine)
         data = (_np.clip(buf, -1.0, 1.0) * 32767).astype(_np.int16)
         with _wave.open(str(path), "wb") as f:
             f.setnchannels(2)

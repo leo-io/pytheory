@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 import time
 
@@ -27,6 +28,15 @@ def _get_sd():
 
 SAMPLE_RATE = 44_100   # CD-quality sample rate (Hz)
 SAMPLE_PEAK = 4_096    # Peak amplitude for 16-bit integer samples
+
+
+@dataclass(frozen=True)
+class _ScoreRenderContext:
+    tempo_map: list[tuple[float, int]]
+    has_tempo_changes: bool
+    samples_per_beat: int
+    total_beats: float
+    total_samples: int
 
 
 def _feedback_comb(x, delay, gain):
@@ -5763,6 +5773,171 @@ def _master_bus(stereo, threshold=0.7, ratio=4.0, attack=0.002,
     return _soft_clip(out, knee=0.8, ceiling=ceiling)
 
 
+def _render_part_numpy_dry(part, score, context, stereo_buf=None):
+    """Render a part's dry NumPy source without part effects or master bus."""
+    total_samples = context.total_samples
+    samples_per_beat = context.samples_per_beat
+    tempo_map = context.tempo_map if context.has_tempo_changes else None
+    part_buf = numpy.zeros(total_samples, dtype=numpy.float32)
+    if not part.notes:
+        return part_buf
+
+    synth_fn = _resolve_synth(part.synth)
+    env_tuple = _resolve_envelope(part.envelope)
+    effective_swing = part.swing if part.swing is not None else score.swing
+    synth_kwargs = dict(getattr(part, 'synth_kw', None) or {})
+    if part.synth in ("fm",):
+        synth_kwargs["mod_ratio"] = part.fm_ratio
+        synth_kwargs["mod_index"] = part.fm_index
+    temperament = getattr(score, 'temperament', 'equal')
+    reference_pitch = getattr(score, 'reference_pitch', 440.0)
+
+    if part.legato:
+        _render_legato_to_buf(
+            part.notes, part_buf, samples_per_beat, total_samples,
+            synth_fn, env_tuple, part.volume, score.bpm,
+            glide_time=part.glide, swing=effective_swing,
+            tempo_map=tempo_map, temperament=temperament,
+            reference_pitch=reference_pitch)
+        return part_buf
+
+    _render_notes_to_buf(
+        part.notes, part_buf, samples_per_beat, total_samples,
+        synth_fn, env_tuple, part.volume, score.bpm,
+        swing=effective_swing, tempo_map=tempo_map,
+        humanize=part.humanize, detune=part.detune, spread=part.spread,
+        stereo_buf=stereo_buf, sub_osc=part.sub_osc,
+        noise_mix=part.noise_mix, filter_attack=part.filter_attack,
+        filter_decay=part.filter_decay, filter_sustain=part.filter_sustain,
+        filter_amount=part.filter_amount,
+        vel_to_filter=part.vel_to_filter, filter_q=part.lowpass_q,
+        synth_kwargs=synth_kwargs, temperament=temperament,
+        reference_pitch=reference_pitch, analog=part.analog)
+    return part_buf
+
+
+def _render_drums_numpy(score, context, parts=None):
+    """Render score drum parts, returning (mono_trigger, stereo_audio)."""
+    from .rhythm import DrumSound
+    import random as _drum_rnd
+
+    total_samples = context.total_samples
+    drum_buf = numpy.zeros(total_samples, dtype=numpy.float32)
+    drum_stereo = numpy.zeros((total_samples, 2), dtype=numpy.float32)
+    drum_swing = score.swing
+    drum_humanize = getattr(score, '_drum_humanize', 0.15)
+    drum_parts = list(parts) if parts is not None else [p for p in score.parts.values() if p.is_drums]
+
+    _DRUM_PAN = {
+        DrumSound.KICK.value: 0.0, DrumSound.SNARE.value: 0.0,
+        DrumSound.RIMSHOT.value: -0.1, DrumSound.CLAP.value: 0.0,
+        DrumSound.CLOSED_HAT.value: 0.3, DrumSound.OPEN_HAT.value: 0.3,
+        DrumSound.PEDAL_HAT.value: 0.3, DrumSound.LOW_TOM.value: 0.4,
+        DrumSound.MID_TOM.value: 0.0, DrumSound.HIGH_TOM.value: -0.3,
+        DrumSound.CRASH.value: -0.4, DrumSound.RIDE.value: 0.4,
+        DrumSound.RIDE_BELL.value: 0.4, DrumSound.COWBELL.value: 0.2,
+        DrumSound.CLAVE.value: -0.2, DrumSound.SHAKER.value: 0.35,
+        DrumSound.TAMBOURINE.value: -0.25, DrumSound.CONGA_HIGH.value: -0.3,
+        DrumSound.CONGA_LOW.value: 0.2, DrumSound.BONGO_HIGH.value: -0.2,
+        DrumSound.BONGO_LOW.value: 0.15, DrumSound.TIMBALE_HIGH.value: -0.25,
+        DrumSound.TIMBALE_LOW.value: 0.2, DrumSound.AGOGO_HIGH.value: -0.3,
+        DrumSound.AGOGO_LOW.value: 0.25, DrumSound.GUIRO.value: -0.15,
+        DrumSound.MARACAS.value: 0.3, DrumSound.TABLA_NA.value: 0.2,
+        DrumSound.TABLA_TIN.value: 0.2, DrumSound.TABLA_TIT.value: 0.25,
+        DrumSound.TABLA_GE.value: -0.2, DrumSound.TABLA_KE.value: -0.2,
+        DrumSound.TABLA_DHA.value: 0.0, DrumSound.TABLA_GE_BEND.value: -0.2,
+        DrumSound.DHOL_DAGGA.value: -0.2, DrumSound.DHOL_TILLI.value: 0.2,
+        DrumSound.DHOL_BOTH.value: 0.0, DrumSound.DHOLAK_GE.value: -0.15,
+        DrumSound.DHOLAK_NA.value: 0.15, DrumSound.DHOLAK_TIT.value: 0.2,
+        DrumSound.MRIDANGAM_THAM.value: -0.2, DrumSound.MRIDANGAM_NAM.value: 0.2,
+        DrumSound.MRIDANGAM_DIN.value: 0.0, DrumSound.MRIDANGAM_THA.value: 0.15,
+        DrumSound.DJEMBE_BASS.value: 0.0, DrumSound.DJEMBE_TONE.value: 0.1,
+        DrumSound.DJEMBE_SLAP.value: -0.1, DrumSound.DOUMBEK_DUM.value: 0.0,
+        DrumSound.DOUMBEK_TEK.value: 0.1, DrumSound.DOUMBEK_KA.value: -0.1,
+        DrumSound.CAJON_BASS.value: 0.0, DrumSound.CAJON_SLAP.value: 0.0,
+        DrumSound.CAJON_SLAP_SNARE.value: 0.0, DrumSound.CAJON_TAP.value: 0.1,
+        DrumSound.METAL_KICK.value: 0.0, DrumSound.METAL_SNARE.value: 0.0,
+        DrumSound.METAL_HAT.value: 0.3, DrumSound.MARCH_SNARE.value: 0.0,
+        DrumSound.MARCH_RIMSHOT.value: 0.0, DrumSound.MARCH_CLICK.value: 0.0,
+        DrumSound.QUAD_1.value: -0.3, DrumSound.QUAD_2.value: -0.1,
+        DrumSound.QUAD_3.value: 0.1, DrumSound.QUAD_4.value: 0.3,
+        DrumSound.QUAD_SPOCK.value: 0.0, DrumSound.BASS_1.value: -0.5,
+        DrumSound.BASS_2.value: -0.25, DrumSound.BASS_3.value: 0.0,
+        DrumSound.BASS_4.value: 0.25, DrumSound.BASS_5.value: 0.5,
+    }
+
+    for drum_part in drum_parts:
+        part_stereo = numpy.zeros((total_samples, 2), dtype=numpy.float32)
+        last_hit_start = {}
+        resonance = {}
+
+        for hit in drum_part._drum_hits:
+            pos = hit.position
+            if drum_swing > 0:
+                beat_frac = pos % 1.0
+                if 0.1 < beat_frac < 0.9:
+                    pos += drum_swing * 0.15
+            start = _beat_to_sample(pos, context.tempo_map) if context.has_tempo_changes else int(pos * context.samples_per_beat)
+            if drum_humanize > 0:
+                max_offset = int(drum_humanize * 0.03 * context.samples_per_beat)
+                start += _drum_rnd.randint(-max_offset, max_offset)
+                start = max(0, start)
+            if start >= total_samples or start < 0:
+                continue
+
+            sound_id = hit.sound.value
+            if sound_id in last_hit_start:
+                prev_start = last_hit_start[sound_id]
+                fade_len = min(int(SAMPLE_RATE * 0.002), max(0, start - prev_start))
+                if fade_len > 0 and start > 0:
+                    fade = numpy.linspace(1.0, 0.0, fade_len).astype(numpy.float32)
+                    fade_start = max(0, start - fade_len)
+                    for ch in range(2):
+                        part_stereo[fade_start:start, ch] *= fade
+            last_hit_start[sound_id] = start
+
+            remaining = total_samples - start
+            hit_len = min(int(SAMPLE_RATE * 0.5), remaining)
+            wave = _render_drum_hit_cached(hit.sound.value, hit_len)
+            vel = hit.velocity
+            if drum_humanize > 0:
+                vel_jitter = int(drum_humanize * 10)
+                vel = max(1, min(127, vel + _drum_rnd.randint(-vel_jitter, vel_jitter)))
+            vel_scale = vel / 127.0
+            if sound_id in {DrumSound.MARCH_SNARE.value, DrumSound.MARCH_RIMSHOT.value}:
+                reso = resonance.get(sound_id, 0.0)
+                reso = min(0.6, reso + 0.08)
+                resonance[sound_id] = reso
+                if reso > 0.1:
+                    buzz_len = min(int(SAMPLE_RATE * 0.06), hit_len)
+                    buzz = _noise(buzz_len) * reso * 0.18
+                    if buzz_len > 20:
+                        bl, al = scipy.signal.butter(2, [3000, 9000], btype='band', fs=SAMPLE_RATE)
+                        buzz = scipy.signal.lfilter(bl, al, buzz)
+                    buzz *= _exp_decay(buzz_len, 25)
+                    wave[:buzz_len] = wave[:buzz_len] + buzz.astype(numpy.float32)
+
+            mono_hit = wave * vel_scale * 0.7 * drum_part.volume
+            if sound_id == DrumSound.KICK.value:
+                drum_buf[start:start + hit_len] += mono_hit
+            pan = _DRUM_PAN.get(sound_id, 0.0)
+            part_stereo[start:start + hit_len] += _pan_to_stereo(mono_hit, pan)
+
+        has_drum_fx = (
+            drum_part.saturation > 0 or drum_part.tremolo_depth > 0
+            or drum_part.phaser_mix > 0 or drum_part.highpass > 0
+            or drum_part.lowpass > 0 or drum_part.delay_mix > 0
+            or drum_part.reverb_mix > 0 or drum_part.distortion_mix > 0
+            or drum_part.cabinet > 0 or drum_part.chorus_mix > 0
+        )
+        if has_drum_fx:
+            for ch in range(2):
+                part_stereo[:, ch] = _apply_part_effects(part_stereo[:, ch], drum_part)
+        drum_stereo += part_stereo
+
+    return drum_buf, drum_stereo
+
+
 def _resolve_synth(name):
     """Map synth name string to wave function."""
     return _SYNTH_FUNCTIONS.get(name, sine_wave)
@@ -5800,6 +5975,25 @@ def _beat_to_sample(beat, tempo_map):
 def _total_samples_from_tempo_map(total_beats, tempo_map):
     """Compute total samples accounting for tempo changes."""
     return _beat_to_sample(total_beats, tempo_map)
+
+
+def _score_render_context(score):
+    """Build the shared timeline context for score rendering."""
+    tempo_map = _build_tempo_map(score)
+    has_tempo_changes = len(tempo_map) > 1
+    samples_per_beat = int(SAMPLE_RATE * 60.0 / score.bpm)
+    total_beats = score.total_beats
+    if has_tempo_changes:
+        total_samples = _total_samples_from_tempo_map(total_beats, tempo_map)
+    else:
+        total_samples = int(total_beats * samples_per_beat)
+    return _ScoreRenderContext(
+        tempo_map=tempo_map,
+        has_tempo_changes=has_tempo_changes,
+        samples_per_beat=samples_per_beat,
+        total_beats=total_beats,
+        total_samples=total_samples,
+    )
 
 
 # Persistent cache of synthesised note waveforms, keyed by
@@ -6158,7 +6352,7 @@ def _render_legato_to_buf(notes, buf, samples_per_beat, total_samples,
     buf[:end] += wave[:end] * volume
 
 
-def render_scores(scores, *, workers=None):
+def render_scores(scores, *, workers=None, engine=None):
     """Render many Scores in parallel across CPU cores.
 
     A single :func:`render_score` is already fast (the synths are cached
@@ -6189,12 +6383,13 @@ def render_scores(scores, *, workers=None):
     if workers is None:
         workers = min(len(scores) or 1, max(1, (os.cpu_count() or 2)))
     if workers <= 1 or len(scores) <= 1:
-        return [render_score(s) for s in scores]
+        return [render_score(s, engine=engine) for s in scores]
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(render_score, scores))
+        render_engine = engine
+        return list(pool.map(lambda s: render_score(s, engine=render_engine), scores))
 
 
-def render_score(score):
+def render_score_numpy(score):
     """Render a Score to a float32 audio buffer.
 
     Mixes all parts (named and default), plus drum hits, into a
@@ -6206,17 +6401,12 @@ def render_score(score):
     Returns:
         Float32 stereo numpy array (N, 2).
     """
-    # Build tempo map for variable tempo support
-    tempo_map = _build_tempo_map(score)
-    has_tempo_changes = len(tempo_map) > 1
-
-    samples_per_beat = int(SAMPLE_RATE * 60.0 / score.bpm)
-    total_beats = score.total_beats
-
-    if has_tempo_changes:
-        total_samples = _total_samples_from_tempo_map(total_beats, tempo_map)
-    else:
-        total_samples = int(total_beats * samples_per_beat)
+    context = _score_render_context(score)
+    tempo_map = context.tempo_map
+    has_tempo_changes = context.has_tempo_changes
+    samples_per_beat = context.samples_per_beat
+    total_beats = context.total_beats
+    total_samples = context.total_samples
     # Stereo master buffer
     stereo_buf = numpy.zeros((total_samples, 2), dtype=numpy.float32)
     # Mono buffer for backwards-compat rendering
@@ -6649,7 +6839,20 @@ def render_score(score):
     return stereo_buf
 
 
-def play_score(score):
+def render_score(score, *, engine=None):
+    """Render a Score using the selected audio engine."""
+    from .engines import resolve_engine
+
+    resolved_engine = resolve_engine(engine)
+    if resolved_engine == "numpy":
+        return render_score_numpy(score)
+    if resolved_engine == "pedalboard":
+        from .pedalboard_engine import render_score_pedalboard
+        return render_score_pedalboard(score)
+    raise ValueError(f"Unsupported engine {resolved_engine!r}")
+
+
+def play_score(score, *, engine=None):
     """Play an entire Score through the speakers.
 
     Renders drums, default notes, and all named parts — each with
@@ -6671,7 +6874,7 @@ def play_score(score):
         >>> lead.add("E5", Duration.QUARTER).add("D5", Duration.QUARTER)
         >>> play_score(score)
     """
-    buf = render_score(score)
+    buf = render_score(score, engine=engine)
     _sd = _get_sd()
     try:
         _sd.play(buf, SAMPLE_RATE)
