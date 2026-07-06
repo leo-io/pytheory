@@ -30,17 +30,16 @@ _NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F',
 def load_wav(path):
     """Load an audio file as mono float64 in [-1, 1].
 
-    WAV files (8/16/32-bit PCM and float) are read directly; stereo is
-    mixed down. Anything else — .m4a voice memos, .mp3, .aiff — is
-    converted on the fly through ``afconvert`` (built into macOS) or
-    ``ffmpeg``, whichever is on your PATH.
+    The concrete loader lives behind :mod:`pytheory.ports`, so alternate
+    import libraries or conversion strategies can be plugged in without
+    changing the analysis code in this module.
 
     Returns:
         (samples, sample_rate) tuple.
     """
-    if not str(path).lower().endswith(".wav"):
-        return _load_via_converter(path)
-    return _read_wav(path)
+    from .ports import get_audio_loader
+
+    return get_audio_loader().load(path)
 
 
 def _read_wav(path):

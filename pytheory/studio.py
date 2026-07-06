@@ -19,101 +19,12 @@ notation library loaded from a CDN. Your audio never leaves your
 machine.
 """
 
-import io
 import json
-import os
-import tempfile
-import threading
 import time
 
+from .application.studio import StudioApplication, TranscriptionOptions
+
 SAMPLE_RATE = 44_100
-
-_scores = {}          # id -> transcribed Score
-_scores_lock = threading.Lock()
-_counter = [0]
-
-
-def _store(score):
-    with _scores_lock:
-        _counter[0] += 1
-        sid = f"s{_counter[0]}-{os.urandom(4).hex()}"
-        _scores[sid] = score
-    return sid
-
-
-def _abc_key_for(detected_key):
-    """Map a detected Key to an ABC key signature string."""
-    if detected_key is None:
-        return "C"
-    tonic = detected_key.note_names[0]
-    return tonic + ("m" if detected_key.mode == "minor" else "")
-
-
-def _transcribe_upload(body, name, params):
-    """Run a transcription on uploaded audio bytes; return response dict."""
-    from .rhythm import Score
-
-    suffix = os.path.splitext(name)[1] or ".wav"
-    fd, tmp = tempfile.mkstemp(suffix=suffix)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(body)
-        kwargs = {}
-        if params.get("bpm"):
-            kwargs["bpm"] = int(params["bpm"])
-        if params.get("quantize"):
-            kwargs["quantize"] = float(params["quantize"])
-        split = params.get("split") in ("1", "true", "on")
-        score = Score.from_wav(tmp, split=split, **kwargs)
-    finally:
-        os.unlink(tmp)
-
-    sid = _store(score)
-    title = os.path.splitext(os.path.basename(name))[0] or "Transcription"
-    detected = getattr(score, "detected_key", None)
-    abc = score.to_abc(title=title, key=_abc_key_for(detected))
-    parts = {}
-    for pname, part in score.parts.items():
-        parts[pname] = sum(1 for n in part.notes if n.tone is not None)
-    if score._drum_hits:
-        parts["drums"] = len(score._drum_hits)
-    return {
-        "id": sid,
-        "bpm": score.bpm,
-        "key": str(detected) if detected else None,
-        "parts": parts,
-        "abc": abc,
-    }
-
-
-def _render_wav_bytes(score):
-    """Render a Score to in-memory WAV bytes."""
-    import wave as wavemod
-
-    import numpy
-
-    from .play import render_score
-
-    buf = render_score(score)
-    data = (numpy.clip(buf, -1, 1) * 32767).astype(numpy.int16)
-    out = io.BytesIO()
-    with wavemod.open(out, "wb") as f:
-        f.setnchannels(2)
-        f.setsampwidth(2)
-        f.setframerate(SAMPLE_RATE)
-        f.writeframes(data.tobytes())
-    return out.getvalue()
-
-
-def _midi_bytes(score):
-    fd, tmp = tempfile.mkstemp(suffix=".mid")
-    os.close(fd)
-    try:
-        score.save_midi(tmp)
-        with open(tmp, "rb") as f:
-            return f.read()
-    finally:
-        os.unlink(tmp)
 
 
 _STUDIO_PAGE = """<!doctype html>
@@ -289,6 +200,7 @@ def serve(port=8124, open_browser=True):
     from urllib.parse import parse_qs, urlparse
 
     tuner_holder = {}
+    app = StudioApplication()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -314,8 +226,11 @@ def serve(port=8124, open_browser=True):
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length)
             try:
-                result = _transcribe_upload(
-                    body, params.get("name", "upload.wav"), params)
+                result = app.transcribe_upload(
+                    body,
+                    params.get("name", "upload.wav"),
+                    TranscriptionOptions.from_query(params),
+                )
                 self._send(200, json.dumps(result))
             except Exception as e:
                 self._send(400, str(e), "text/plain")
@@ -327,13 +242,16 @@ def serve(port=8124, open_browser=True):
                 return self._send(200, _STUDIO_PAGE,
                                   "text/html; charset=utf-8")
             if url.path in ("/render", "/midi"):
-                score = _scores.get(params.get("id", ""))
-                if score is None:
-                    return self._send(404, "unknown id", "text/plain")
+                score_id = params.get("id", "")
                 if url.path == "/render":
-                    return self._send(200, _render_wav_bytes(score),
-                                      "audio/wav")
-                return self._send(200, _midi_bytes(score), "audio/midi")
+                    payload = app.render_score_wav_bytes(score_id)
+                    if payload is None:
+                        return self._send(404, "unknown id", "text/plain")
+                    return self._send(200, payload, "audio/wav")
+                payload = app.score_midi_bytes(score_id)
+                if payload is None:
+                    return self._send(404, "unknown id", "text/plain")
+                return self._send(200, payload, "audio/midi")
             if url.path == "/stream":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -370,8 +288,7 @@ def serve(port=8124, open_browser=True):
     print("  Drop in a recording; get sheet music, playback, and MIDI.")
     print("  Ctrl-C to stop.")
     if open_browser:
-        import webbrowser
-        webbrowser.open(url)
+        app.launch_browser(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

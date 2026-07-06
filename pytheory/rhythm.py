@@ -5609,8 +5609,9 @@ class Score:
             buf = score.render()          # (N, 2) float32
             score.to_wav("song.wav")      # or save straight to disk
         """
-        from .play import render_score
-        return render_score(self)
+        from .ports import get_score_renderer
+
+        return get_score_renderer().render(self)
 
     def to_wav(self, path):
         """Render this score and save it as a 16-bit stereo WAV file.
@@ -5625,18 +5626,9 @@ class Score:
 
             score.to_wav("demo.wav")
         """
-        import wave as _wave
-        import numpy as _np
-        from .play import SAMPLE_RATE
+        from .ports import get_score_renderer
 
-        buf = self.render()
-        data = (_np.clip(buf, -1.0, 1.0) * 32767).astype(_np.int16)
-        with _wave.open(str(path), "wb") as f:
-            f.setnchannels(2)
-            f.setsampwidth(2)
-            f.setframerate(SAMPLE_RATE)
-            f.writeframes(data.tobytes())
-        return path
+        return get_score_renderer().save_wav(self, path)
 
     def save_midi(self, path, velocity=100):
         """Export to Standard MIDI File, measure-aware."""
@@ -5767,10 +5759,18 @@ class Score:
             >>> print(score.to_abc(title="My Hum"))
             >>> score.save_midi("hum.mid")
         """
-        from .audio import transcribe
-        return transcribe(path, bpm=bpm, quantize=quantize, split=split,
-                          part_name=part_name, synth=synth,
-                          fmin=fmin, fmax=fmax)
+        from .ports import get_audio_transcriber
+
+        return get_audio_transcriber().transcribe(
+            path,
+            bpm=bpm,
+            quantize=quantize,
+            split=split,
+            part_name=part_name,
+            synth=synth,
+            fmin=fmin,
+            fmax=fmax,
+        )
 
     # ── MIDI Import ──────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@
 
 __version__ = "0.57.8"
 
+from . import model
 from .tones import Tone, Interval
 from .systems import System, SYSTEMS, TET
 from .scales import TonedScale, Key, PROGRESSIONS
@@ -35,5 +36,5 @@ __all__ = [
     "play", "save", "save_midi", "play_progression", "play_pattern",
     "play_score", "render_score", "render_scores", "Synth", "Envelope",
     "Duration", "TimeSignature", "RhythmNote", "Rest", "Score", "Part",
-    "DrumSound", "Pattern", "Hit", "Section", "INSTRUMENTS",
+    "DrumSound", "Pattern", "Hit", "Section", "INSTRUMENTS", "model",
 ]

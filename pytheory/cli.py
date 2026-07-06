@@ -15,9 +15,9 @@ def _emit_json(data):
 def _play_items(items, t=600):
     """Play a list of Tone/Chord objects in sequence (best-effort)."""
     try:
-        from .play import play
-        for item in items:
-            play(item, t=t)
+        from .application.playback import play_items
+
+        play_items(items, t=t)
     except Exception as e:           # no audio backend, etc.
         print(f"  (could not play: {e})")
 
@@ -182,7 +182,8 @@ def cmd_progression(args):
 def cmd_play(args):
     from .tones import Tone
     from .chords import Chord
-    from .play import play, Synth, Envelope
+    from .application.playback import play_item
+    from .play import Synth, Envelope
 
     synth_map = {
         "sine": Synth.SINE, "saw": Synth.SAW, "triangle": Synth.TRIANGLE,
@@ -231,8 +232,8 @@ def cmd_play(args):
     print(f"  Synth:   {args.synth}")
     print(f"  Envelope: {args.envelope}")
     print(f"  Duration: {duration} ms")
-    play(target, temperament=args.temperament, synth=synth, t=duration,
-         envelope=envelope)
+    play_item(target, temperament=args.temperament, synth=synth, t=duration,
+              envelope=envelope)
 
 
 def cmd_identify(args):
