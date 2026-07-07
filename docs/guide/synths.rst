@@ -814,6 +814,21 @@ bridge, producing a shimmering, metallic sustain.
 
    <audio controls style="width:100%;margin:0.3em 0 0.5em"><source src="../_static/audio/synth_sitar.wav" type="audio/wav"></audio>
 
+Oud Synth
+~~~~~~~~~~
+
+The fretless Arab/Turkish lute. Doubled Karplus-Strong courses over a
+deep bowl resonance with a dark gut-string rolloff — warm and round,
+no steel sparkle. ``Maqam.play()`` uses this voice by default.
+
+.. code-block:: python
+
+   oud = score.part("oud", synth="oud_synth")
+
+.. raw:: html
+
+   <audio controls style="width:100%;margin:0.3em 0 0.5em"><source src="../_static/audio/synth_oud.wav" type="audio/wav"></audio>
+
 Timpani Synth
 ~~~~~~~~~~~~~
 

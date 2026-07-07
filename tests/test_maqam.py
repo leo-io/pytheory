@@ -68,6 +68,15 @@ def test_render_buffer():
     assert len(buf) > 0 and np.all(np.isfinite(buf))
 
 
+def test_render_default_oud_voice():
+    # Regression: render()/play() default to synth="oud", which crashed
+    # with KeyError('OUD') while the Synth enum had no oud voice.
+    import numpy as np
+    buf = Maqam.get("Rast").render("C4")
+    assert len(buf) > 0 and np.all(np.isfinite(buf))
+    assert np.abs(buf).max() > 0
+
+
 def test_cli_maqam_info(capsys, monkeypatch):
     from pytheory import cli
     monkeypatch.setattr(sys, "argv", ["pytheory", "maqam", "rast", "--tuning"])

@@ -2518,6 +2518,60 @@ def sitar_wave(hz, peak=SAMPLE_PEAK, n_samples=SAMPLE_RATE):
     return (peak * out).astype(numpy.int16)
 
 
+def oud_wave(hz, peak=SAMPLE_PEAK, n_samples=SAMPLE_RATE):
+    """Oud — Karplus-Strong doubled course in a deep wooden bowl.
+
+    The fretless Arab/Turkish lute, ancestor of the European lute.
+    Short-scale nylon/gut courses plucked with a long risha give it a
+    round, dark, intimate voice — all warmth, no steel-string sparkle:
+
+    1. A doubled course — two Karplus-Strong strings in unison with
+       independent excitation and slightly different decay, beating
+       gently against each other like real paired strings.
+    2. Bowl resonance — the deep staved back speaks lower than a
+       flat-back guitar body (strong low air mode, woody low-mids).
+    3. Dark EQ — a soft plectrum on gut leaves almost nothing above
+       3kHz, so the tone stays warm right through the attack.
+    """
+    period = int(SAMPLE_RATE / hz)
+    if period < 2:
+        period = 2
+
+    rng = numpy.random.default_rng(int(hz * 100) % 2**31)
+
+    # A doubled course: unison strings, independently plucked, the
+    # second a touch quieter and quicker to decay (gut damps fast).
+    out = numpy.zeros(n_samples, dtype=numpy.float64)
+    for mix, damp in [(0.6, 0.9985), (0.4, 0.9978)]:
+        buf = rng.uniform(-0.7, 0.7, period).astype(numpy.float64)
+        # Very warm initial burst — soft risha on gut, not a bright pick
+        for j in range(3):
+            for k in range(period - 1):
+                buf[k] = 0.5 * buf[k] + 0.5 * buf[k + 1]
+        out += _karplus_strong(buf, n_samples, 0.5, 0.5, damp) * mix
+
+    # Bowl resonance — lower formants than the guitar's flat back
+    resonances = numpy.zeros(n_samples, dtype=numpy.float64)
+    for center, bw, gain in [(90, 50, 0.5), (220, 80, 0.35), (450, 120, 0.15)]:
+        lo = max(20, center - bw)
+        hi = min(SAMPLE_RATE // 2 - 1, center + bw)
+        if lo < hi:
+            bp, ap = scipy.signal.butter(2, [lo, hi], btype='band', fs=SAMPLE_RATE)
+            resonances += scipy.signal.lfilter(bp, ap, out) * gain
+
+    out = out * 0.6 + resonances
+
+    # Dark rolloff — the oud has no sparkle above ~3kHz
+    bl, al = scipy.signal.butter(2, 3000, btype='low', fs=SAMPLE_RATE)
+    out = scipy.signal.lfilter(bl, al, out)
+
+    mx = numpy.abs(out).max()
+    if mx > 0:
+        out /= mx
+
+    return (peak * out).astype(numpy.int16)
+
+
 def crotales_wave(hz, peak=SAMPLE_PEAK, n_samples=SAMPLE_RATE):
     """Crotales — small tuned bronze discs struck with brass mallets.
 
@@ -2849,6 +2903,7 @@ class Synth(Enum):
     UKULELE = "ukulele_synth"
     ACOUSTIC_GUITAR = "acoustic_guitar_synth"
     SITAR = "sitar_synth"
+    OUD = "oud_synth"
     ELECTRIC_GUITAR = "electric_guitar_synth"
     CROTALES = "crotales_synth"
     TINGSHA = "tingsha_synth"
@@ -2893,7 +2948,8 @@ _SYNTH_FUNCTIONS = {
     "banjo_synth": banjo_wave, "mandolin_synth": mandolin_wave,
     "ukulele_synth": ukulele_wave,
     "acoustic_guitar_synth": acoustic_guitar_wave,
-    "sitar_synth": sitar_wave, "electric_guitar_synth": electric_guitar_wave,
+    "sitar_synth": sitar_wave, "oud_synth": oud_wave,
+    "electric_guitar_synth": electric_guitar_wave,
     "crotales_synth": crotales_wave,
     "tingsha_synth": tingsha_wave,
     "singing_bowl_strike_synth": singing_bowl_strike_wave,

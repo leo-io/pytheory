@@ -2,6 +2,18 @@
 
 All notable changes to PyTheory are documented here.
 
+## 0.57.13
+
+- **`Maqam.play()` and `.render()` no longer crash.** Both default to
+  `synth="oud"`, but the Synth enum had no oud voice, so playing any
+  maqam — `Maqam.get("rast").play()` or `pytheory maqam rast --play` —
+  raised `KeyError: 'OUD'`. There is now a real `Synth.OUD`: doubled
+  Karplus-Strong courses over a deep bowl resonance with a dark
+  gut-string rolloff, so the advertised default voice actually exists.
+- **New `oud` instrument preset.** `score.part("melody", instrument="oud")`
+  works like the other plucked strings, and the synth catalog docs
+  gained an Oud Synth section with an audio demo.
+
 ## 0.57.12
 
 - **Score tempo validation is consistent now.** `Score(bpm=...)`,

@@ -265,6 +265,10 @@ INSTRUMENTS = {
         "lowpass": 4500,
         "humanize": 0.2,
     },
+    "oud": {
+        "synth": "oud_synth", "envelope": "none",
+        "humanize": 0.2,
+    },
     "crotales": {
         "synth": "crotales_synth", "envelope": "none",
         "reverb": 0.3,
