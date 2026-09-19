@@ -116,6 +116,25 @@ def test_score_duration_ms():
     assert score.duration_ms == 1500.0
 
 
+def test_score_duration_ms_with_tempo_changes():
+    score = Score("4/4", bpm=60)
+    score.add(Tone.from_string("C4"), Duration.WHOLE)  # 4 beats = 4000 ms
+    score.set_tempo(120)
+    score.add(Tone.from_string("D4"), Duration.WHOLE)  # 4 beats = 2000 ms
+    assert score.duration_ms == 6000.0
+
+
+def test_score_bpm_must_be_positive():
+    with pytest.raises(ValueError, match="bpm must be positive"):
+        Score("4/4", bpm=0)
+    with pytest.raises(ValueError, match="bpm must be positive"):
+        Score("4/4", bpm=-120)
+    score = Score("4/4", bpm=120)
+    with pytest.raises(ValueError, match="bpm must be positive"):
+        score.bpm = 0
+    assert score.bpm == 120
+
+
 def test_score_iteration():
     score = Score("4/4", bpm=120)
     t = Tone.from_string("C4")
@@ -345,6 +364,15 @@ def test_set_tempo():
     beat_pos, new_bpm = score._tempo_changes[0]
     assert new_bpm == 140
     assert beat_pos == 4.0  # after one WHOLE note
+
+
+def test_set_tempo_bpm_must_be_positive():
+    from pytheory import Score
+    score = Score("4/4", bpm=120)
+    with pytest.raises(ValueError, match="bpm must be positive"):
+        score.set_tempo(0)
+    with pytest.raises(ValueError, match="bpm must be positive"):
+        score.set_tempo(-10)
 
 
 def test_section_basic():

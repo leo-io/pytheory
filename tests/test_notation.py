@@ -108,6 +108,14 @@ def test_save_midi_with_gap(tmp_path):
     assert path.exists()
 
 
+def test_save_midi_bpm_must_be_positive(tmp_path):
+    from pytheory.play import save_midi
+    path = tmp_path / "invalid_bpm.mid"
+    with pytest.raises(ValueError, match="bpm must be positive"):
+        save_midi(Tone.from_string("C4"), str(path), bpm=0)
+    assert not path.exists()
+
+
 def test_cli_midi_basic(capsys, tmp_path):
     from pytheory.cli import cmd_midi
     import argparse
@@ -181,6 +189,38 @@ def test_score_save_midi(tmp_path):
     assert b"MTrk" in data
     # File is non-trivial
     assert len(data) > 30
+
+
+def test_score_save_midi_writes_tempo_changes(tmp_path):
+    """Tempo changes survive export as MIDI tempo meta events."""
+    score = Score("4/4", bpm=90)
+    score.add(Tone.from_string("C4"), Duration.WHOLE)
+    score.set_tempo(180)
+    score.add(Tone.from_string("D4"), Duration.WHOLE)
+
+    midi_path = tmp_path / "tempo_changes.mid"
+    score.save_midi(str(midi_path))
+
+    data = midi_path.read_bytes()
+    assert data.count(b"\xFF\x51\x03") == 2
+    assert b"\x0A\x2C\x2A" in data  # 666666 us/beat = 90 BPM
+    assert b"\x05\x16\x15" in data  # 333333 us/beat = 180 BPM
+
+
+def test_from_midi_preserves_tempo_changes(tmp_path):
+    """Tempo changes written by save_midi() come back on import."""
+    score = Score("4/4", bpm=60)
+    score.add(Tone.from_string("C4"), Duration.WHOLE)
+    score.set_tempo(120)
+    score.add(Tone.from_string("D4"), Duration.WHOLE)
+
+    midi_path = tmp_path / "tempo_map.mid"
+    score.save_midi(str(midi_path))
+
+    imported = Score.from_midi(str(midi_path))
+    assert imported.bpm == 60
+    assert imported._tempo_changes == [(4.0, 120)]
+    assert imported.duration_ms == 6000.0
 
 
 def test_pattern_midi_export(tmp_path):

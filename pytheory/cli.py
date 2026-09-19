@@ -330,7 +330,7 @@ def cmd_live(args):
 
 def cmd_studio(args):
     from .studio import serve
-    serve(port=args.port, open_browser=not args.no_browser)
+    serve(port=args.port, open_browser=not args.no_browser, host=args.host)
 
 
 def cmd_tune(args):
@@ -340,7 +340,8 @@ def cmd_tune(args):
     tuner.start()
     try:
         if args.serve:
-            serve(tuner, port=args.port, open_browser=not args.no_browser)
+            serve(tuner, port=args.port, open_browser=not args.no_browser,
+                  host=args.host)
         else:
             extra = f", {args.instrument}" if args.instrument else ""
             if args.chords:
@@ -980,10 +981,14 @@ def cmd_reharmonize(args):
 
 
 def main():
+    from . import __version__
+
     parser = argparse.ArgumentParser(
         prog="pytheory",
         description="Music Theory for Humans — from the command line",
     )
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command")
 
     # Shared flags for the theory/music commands.
@@ -1152,6 +1157,8 @@ def main():
     # studio
     p = sub.add_parser("studio", help="Browser studio: drop in a recording, get sheet music, playback, and MIDI")
     p.add_argument("--port", type=int, default=8124, help="Port (default: 8124)")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="Host/interface to bind (default: 127.0.0.1; use 0.0.0.0 to share on LAN)")
     p.add_argument("--no-browser", action="store_true", help="Don't auto-open the browser")
 
     # tune
@@ -1164,6 +1171,8 @@ def main():
     p.add_argument("--chords", action="store_true",
                    help="Identify chords too — strum and see the chord name")
     p.add_argument("--port", type=int, default=8123, help="Port for --serve (default: 8123)")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="Host/interface for --serve (default: 127.0.0.1; use 0.0.0.0 to share on LAN)")
     p.add_argument("--ref", type=float, default=440.0, help="Reference pitch for A4 in Hz (default: 440)")
     p.add_argument("--device", type=int, default=None, help="Input device index (default: system default)")
     p.add_argument("--no-browser", action="store_true", help="Don't auto-open the browser with --serve")

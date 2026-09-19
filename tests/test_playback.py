@@ -147,7 +147,7 @@ def test_render_score_with_parts():
 @needs_portaudio
 def test_all_synths_in_enum():
     from pytheory.play import Synth
-    assert len(Synth) == 56
+    assert len(Synth) == 57
     for s in Synth:
         wave = s(440, n_samples=1000)
         assert len(wave) == 1000
@@ -561,7 +561,7 @@ def test_note_choking_renders():
 
 def test_synth_enum_count():
     from pytheory.play import Synth
-    assert len(Synth) == 56
+    assert len(Synth) == 57
 
 
 def test_all_synths_render_and_enum_match():
@@ -582,6 +582,21 @@ def test_articulations_render():
         p.add("C4", Duration.QUARTER, articulation=art)
     buf = render_score(score)
     assert len(buf) > 0
+
+
+def test_legato_honors_basic_synth_waveform():
+    from pytheory.play import render_score
+
+    def render(synth):
+        score = pytheory.Score("4/4", bpm=120)
+        part = score.part("lead", synth=synth, envelope="none",
+                          legato=True, volume=0.5)
+        part.add("C4", Duration.WHOLE)
+        return render_score(score)
+
+    sine = render("sine")
+    saw = render("saw")
+    assert numpy.max(numpy.abs(saw - sine)) > 0.05
 
 
 def test_render_score_exported():

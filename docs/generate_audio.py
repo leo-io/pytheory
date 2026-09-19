@@ -715,6 +715,17 @@ def gen_synth_sitar():
     render("synth_sitar", score)
 
 
+def gen_synth_oud():
+    score = Score("4/4", bpm=90)
+    p = score.part("demo", instrument="oud", volume=0.5, reverb=0.25)
+    # A Hijaz-flavoured phrase (the maqam player's default voice)
+    for n, d in [("C4", 0.5), ("Db4", 0.5), ("E4", 1.0), ("F4", 0.5),
+                 ("G4", 0.5), ("F4", 0.5), ("E4", 0.5), ("Db4", 1.0),
+                 ("C4", 2.0)]:
+        p.add(n, d, velocity=80)
+    render("synth_oud", score)
+
+
 def gen_synth_harp():
     score = Score("4/4", bpm=80)
     p = score.part("demo", synth="harp_synth", envelope="none",
@@ -1168,6 +1179,7 @@ GENERATORS = [
     gen_synth_acoustic_guitar,
     gen_synth_electric_guitar,
     gen_synth_sitar,
+    gen_synth_oud,
     gen_synth_kalimba,
     gen_synth_wurlitzer,
     gen_synth_vibraphone,

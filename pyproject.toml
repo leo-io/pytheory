@@ -1,6 +1,6 @@
 [project]
 name = "pytheory"
-version = "0.57.8"
+version = "0.57.13"
 description = "Music Theory for Humans"
 readme = "README.md"
 license = "MIT"
@@ -42,7 +42,7 @@ pytheory = "pytheory.cli:main"
 
 [dependency-groups]
 dev = ["pytest", "LinkPython-extern"]
-docs = ["sphinx", "myst-parser"]
+docs = ["sphinx", "myst-parser", "sphinx-design", "sphinx-copybutton"]
 
 [build-system]
 requires = ["setuptools"]
